@@ -1,0 +1,226 @@
+classdef easytopox <hgsetget
+    properties
+        BrainField
+        cmap
+        BrainSurface
+        map
+        img
+        mni
+        df
+        colors
+        NV
+        NF
+        neiber
+        label
+        facearea
+        v2face
+	cutoff
+    end % end of properties
+    methods
+        function clusterStat=statCluster(obj,clustersize,pn0)
+            for pn=1:length(pn0)
+                ml=max(obj.label{pn});
+                vt=obj.label{pn};
+                nn=0;
+                for i=1:ml
+                    ind=find(obj.label{pn}==i);
+                    clusterStat(pn).N(i)=length(ind);
+                    if clusterStat(pn).N(i)<clustersize; continue; end
+                    nn=nn+1;
+                    temp=obj.img.val(ind);
+                    [mv,ii]=max(temp*pn0(pn));
+                    clusterStat(pn).peakbeta(nn)=mv*pn0(pn);
+                    clusterStat(pn).peakxyz(nn,:)=obj.BrainSurface.vertices(ind(ii),:);
+                    clusterStat(pn).ind(nn)=ind(ii);
+                    facel=[];
+                    for ii=1:length(ind)
+                        iii=ind(ii);
+                        facel=[facel obj.v2face{iii}];
+                    end
+                    clusterStat(pn).facel{nn}=facel;
+                    clusterStat(pn).area(nn)=sum(obj.facearea(facel));
+                end
+            end
+        end
+	function stat=ttest(obj,mall)
+	    N=37694;
+	    for i=1:N
+		temp=mall(i,:);
+		temp(temp==0)=[];
+		temp(isnan(temp))=[];
+		if length(temp)==0; continue;end
+		[H,stat.p(i),CI,STATS] = ttest(temp) ;
+		stat.t(i)=STATS.tstat;
+		stat.n(i)=length(temp);
+		if mod(i,300)==0; fprintf('%d \n',round(100*i/N)));end
+	    end
+	end
+	function stat=ttestmap(obj,mall)
+	    for i=1:181
+		for j=1:201
+		    temp=mall(i,j,:);
+		    temp(temp==0)=[];
+		    temp(isnan(temp))=[];
+		    if length(temp)==0; continue;end
+		    [H,stat.p(i,j),CI,STATS] = ttest(temp) ;
+		    stat.t(i,j)=STATS.tstat;
+		    stat.n(i,j)=length(temp);
+		end
+		fprintf('%d \n',i);
+	    end
+	end
+	function stat=regression(obj,mall,X,C)
+	    Y=mall';
+	    Result=nirsRegX(Y,X,C);
+	end
+
+
+	function showCluster(obj,cutoff,clustersize,pn0)
+	    val=obj.img.val;
+	    obj.img.val=val*0;
+	    mm=-1;
+	    for pn=1:length(pn0)
+		ml=max(obj.label{pn});
+		vt=obj.label{pn};
+		for i=1:ml
+		    ind=find(vt==i);
+		    Nl(i)=length(ind);
+		    if Nl(i)<clustersize; continue; end
+		    obj.img.val(ind)=val(ind);
+		end
+	    end
+	    obj.cutoff=cutoff;
+	    obj.pn=pn0;
+	    obj.show3D(cutoff,pn0);
+	end
+	
+	function showClusterLabel(obj,clustersize,pn0)
+	    val=obj.img.val;
+	    obj.img.val=val*0;
+	    mm=-1;
+	    for pn=1:length(pn0)
+		ml=max(obj.label{pn});
+		vt=obj.label{pn};
+		for i=1:ml
+		    ind=find(obj.label{pn}==i);
+		    Nl(i)=length(ind);
+		    if Nl(i)<clustersize; vt(vt==i)=0; end
+		end
+		obj.img.val=obj.img.val+pn0(pn)*vt;
+		if ml>mm; mm=ml;end
+	    end
+	    obj.show3D([0 mm],pn0);
+	end
+	function cluster(obj,threshold)
+	    global neiborList val0 label1 l
+	    neiborList=obj.neiber;
+	    pn0=[-1 1];
+	    for ii=1:2
+		pn=pn0(ii);
+		v=obj.img.val*pn;
+		val0=v>threshold;
+		label1=val0*0;
+		l=0;
+		for i=1:obj.NV
+		    if val0(i)>0; l=l+1; SearchCluster(i); end
+		    if mod(i,100)==0; fprintf('%d\n',i);end
+		end
+		obj.label{ii}=label1;
+	    end
+	end
+	function obj=preparecluster(obj)
+	    obj.NV=size(obj.BrainSurface.vertices,1);
+	    obj.NF=size(obj.BrainSurface.faces,1);
+	    for i=1:obj.NV
+		obj.neiber{i}=[];
+		obj.v2face{i}=[];
+	    end
+	    for j=1:obj.NF
+		temp=obj.BrainSurface.faces(j,:);
+		for ii=1:3
+		    temp1=temp;
+		    i=temp(ii);
+		    temp1(ii)=[];
+		    obj.neiber{i}=[obj.neiber{i} temp1];
+		    obj.v2face{i}=[obj.v2face{i} j];
+		end
+		obj.facearea(j)=triangleP(obj.BrainSurface.vertices(temp,:));
+		if mod(j,100)==0; fprintf('%d\n',j);end
+	    end
+	    for i=1:obj.NV
+		obj.neiber{i}=unique( obj.neiber{i});
+		obj.v2face{i}=unique( obj.v2face{i});
+	    end
+	end
+	function handles = easytopox()
+	    load('BrainField.mat');
+	    handles.BrainField = BrainField;
+	    clear BrainField;
+	    handles.BrainSurface = load('BrainSurface.mat');
+	    load cmap_jet;
+	    handles.cmap = cmap;
+	    load('rendercolors.mat');
+	    handles.colors=colors;
+	end
+	function handles = setmni(handles,mni)
+	    mni(:,4)=1+(mni(:,1)>0);
+	    handles.mni = mni;
+	    handles.loadT(mni(:,1)); % set up phi thea
+	end
+	function handles = loadT(handles,val)
+	    [theta, phi, radius, value, region] = topo_map_rot(handles.mni, val);
+	    handles.map.val = value;
+	    handles.img.val = topo_surf_rot(handles.mni, val, handles.BrainSurface.vertices);
+	    handles.map.theta = theta;
+	    handles.map.phi = phi;
+	end
+	function h = showphitheta(handles,cutoff1)
+	    map = handles.map.val;
+	    if exist('cutoff1') && ~isempty(cutoff1)
+		h = imagesc(handles.map.phi(1,:),handles.map.theta(:,1),map,[-cutoff1 cutoff1]); set(gca,'Ydir','normal');
+	    else
+		h = imagesc(handles.map.phi(1,:),handles.map.theta(:,1),map,[-max(abs(map(:))) max(abs(map(:)))]); set(gca,'Ydir','normal');
+	    end
+	    hold on; contour(handles.map.phi,handles.map.theta,handles.BrainField,5,'k-','linewidth',1);
+	    xlabel('\phi (degree)'); ylabel('\theta (degree)');
+	    colormap(handles.cmap); colorbar;
+	end
+	function h = show3D(handles,cutoff,pn)
+	    %HbO: 3D image on brain surface
+	    vertvalue = handles.img.val;
+	    vertcolor=val2color(vertvalue,cutoff,pn,handles.colors);
+	    h = plotimage(handles.BrainSurface.vertices,handles.BrainSurface.faces, vertcolor, [0 0 1]);
+	    colormap(handles.cmap);
+	end
+	function h=plotchannel(handles,plotBrain,plotText)
+	    h = plotoptodes([],handles.BrainSurface.faces,handles.mni,3,[0 0 1]);
+	    %h = plotoptodes(handles.BrainSurface.vertices,handles.BrainSurface.faces,handles.mni,3,[0 0 1]);
+	     if plotBrain>0
+	     val=handles.img.val;
+	     handles.img.val=0*handles.img.val;
+	     handles.show3D([0 1],[1]);
+	     handles.img.val=val;
+	     end
+	     if plotText==0; return;end
+	    d=1.1;
+	    for i=1:size(handles.mni,1);
+		text(handles.mni(i,1)*d,handles.mni(i,2)*d,handles.mni(i,3)*d,int2str(i));
+	    end
+	end
+	function h=report(handles,clusterStat)
+	    h = plotoptodes([],handles.BrainSurface.faces,handles.mni,3,[0 0 1]);
+	    %h = plotoptodes(handles.BrainSurface.vertices,handles.BrainSurface.faces,handles.mni,3,[0 0 1]);
+	     if plotBrain>0
+	     val=handles.img.val;
+	     handles.img.val=0*handles.img.val;
+	     handles.show3D([0 1],[1]);
+	     handles.img.val=val;
+	     end
+	     if plotText==0; return;end
+	    d=1.1;
+	    for i=1:size(handles.mni,1);
+		text(handles.mni(i,1)*d,handles.mni(i,2)*d,handles.mni(i,3)*d,int2str(i));
+	    end
+	end
+    end
+end

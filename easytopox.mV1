@@ -1,0 +1,57 @@
+classdef easytopox <hgsetget
+    properties
+        BrainField
+        cmap
+	BrainSurface
+	map
+        img
+	mni
+	df
+	colors
+    end % end of properties
+    methods
+        function handles = easytopox()
+	    load('BrainField.mat');
+	    handles.BrainField = BrainField;
+	    clear BrainField;
+	    handles.BrainSurface = load('BrainSurface.mat');
+	    load cmap_jet;
+	    handles.cmap = cmap;
+	    load('rendercolors.mat');
+	    handles.colors=colors;
+	end
+        function handles = setmni(handles,mni)
+mni(:,4)=1+(mni(:,1)>0);
+	    handles.mni = mni;
+	    handles.loadT(mni(:,1)); % set up phi thea
+	end
+        function handles = loadT(handles,val)
+	    [theta, phi, radius, value, region] = topo_map_rot(handles.mni, val);
+            handles.map.val = value; 
+	    handles.img.val = topo_surf_rot(handles.mni, val, handles.BrainSurface.vertices);
+	    handles.map.theta = theta;
+	    handles.map.phi = phi;        
+	end
+	function h = showphitheta(handles,cutoff1)
+	    map = handles.map.val;
+	    if exist('cutoff1') && ~isempty(cutoff1)
+		h = imagesc(handles.map.phi(1,:),handles.map.theta(:,1),map,[-cutoff1 cutoff1]); set(gca,'Ydir','normal');
+	    else
+		h = imagesc(handles.map.phi(1,:),handles.map.theta(:,1),map,[-max(abs(map(:))) max(abs(map(:)))]); set(gca,'Ydir','normal');
+	    end    
+	    hold on; contour(handles.map.phi,handles.map.theta,handles.BrainField,5,'k-','linewidth',1); 
+	    xlabel('\phi (degree)'); ylabel('\theta (degree)');
+	    colormap(handles.cmap); colorbar;
+	end
+	function h = show3D(handles,cutoff,pn)
+	    %HbO: 3D image on brain surface
+	    vertvalue = handles.img.val;
+	    vertcolor=val2color(vertvalue,cutoff,pn,handles.colors);
+	    h = plotimage(handles.BrainSurface.vertices,handles.BrainSurface.faces, vertcolor, [0 0 1]);    
+	    colormap(handles.cmap);
+	end
+	function h=plotchannel(handles)
+	    h = plotoptodes(handles.BrainSurface.vertices,handles.BrainSurface.faces,handles.mni,3,[0 0 1]);
+	end
+    end
+end
